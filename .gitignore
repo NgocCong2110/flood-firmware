@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+firmware-cam/secrets_cam.h
+src/common/secrets.h
+tools/*.csv.bak
+*.pyc
+__pycache__/

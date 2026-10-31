@@ -1,0 +1,11 @@
+# Thay @p1.. bằng tài khoản GitHub thật
+/src/p1_sensor/      @p1
+/src/main.cpp        @p1
+/src/common/         @p1
+/platformio.ini      @p1
+/tools/p1_calib/     @p1
+/src/p2_net/         @p2
+/src/p7_alert/       @p7
+/test/p7_logic/      @p7
+/src/p9_scenario/    @p9
+/firmware-cam/       @p9
