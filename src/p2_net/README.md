@@ -1,43 +1,47 @@
 # P2 - Mạng, MQTT, đệm dữ liệu
 
-**Thư mục của P2:** `src/p2_net/`
-**File phải tạo:** `net.cpp`, `ringbuf.h`
-**Nghiệm thu phụ trách:** #4 (độ trễ cảnh báo), #8 (mất Wi-Fi 5 phút), #10 (phục hồi) - làm cùng nhóm C
+**Thư mục của P2:** `src/p2_net/` · **Nghiệm thu:** #4, #8, #10 (cùng nhóm C), #23 (lệnh MQTT, cùng P9/C)
+**Theo:** hợp đồng chung v6.1 DRAFT mục 7; `P2-dat.md` v8.1.
 
-## Việc cụ thể theo ngày
-**N1 (M0)**
-- Kết nối Wi-Fi + MQTT tới broker của nhóm C, gửi thử 1 tin.
-- **Xác nhận hợp đồng v5 với nhóm C** (đặc biệt Q2: `status` là chuỗi trơn hay JSON).
-- Xong khi: `mosquitto_sub -h <IP> -t 'flood/node01/#' -v` thấy tin thử.
+## File
 
-**N2 (M1)**
-- Telemetry 1 bản/giây, `status`, LWT, `boot`/`seq`, NTP.
-- `setBufferSize(768)` cho PubSubClient.
-- Xong khi: bản tin đủ trường đúng hợp đồng; có bản ghi `real` trong DB của C.
+| File | Nội dung | Trạng thái |
+|---|---|---|
+| `ringbuf.h` | Vòng đệm 900 bản + đánh dấu đã gửi / gửi bù (`TxRing`) | Test PC đạt (`test/p2_net`) |
+| `netcmd.h` | Kiểm cấu trúc `cmd` / `scenario` / `config` (chỉ ArduinoJson) | Test PC đạt (`test/p2_net`) |
+| `net.cpp` | Wi-Fi, NTP, MQTT, telemetry, status/LWT, ACK, `netTask` | Chỉ kiểm biên dịch với header giả trên PC. **Chưa biên dịch ESP32, chưa nạp board** |
 
-**N3 (M2)**
-- `RingBuf` (đệm 900 bản, BIẾN TOÀN CỤC) và replay (gửi bù, cờ `replay`).
-- Đo độ trễ (#4, chỉ tính `replay=false`).
-- Xong khi: rút Wi-Fi 5 phút rồi nối lại, dữ liệu bù đúng thứ tự, không mất mẫu.
+## Trước khi biên dịch
+1. **Xoá 7 dòng P2 trong `src/common/stubs.cpp`** (P1 sở hữu, báo P1): `sampleCommit`, `netTask`, `eventPost`, `ackPost`, `netInit`, `eventPostState`, `gNetBeat`. Không xoá thì lỗi trùng định nghĩa.
+2. Tạo `src/common/secrets.h` (không commit):
+   ```cpp
+   #define WIFI_SSID "ten-wifi"
+   #define WIFI_PASS "mat-khau"
+   #define MQTT_HOST "192.168.1.10"   // IP laptop chạy Mosquitto
+   // tuỳ chọn: #define MQTT_PORT 1883, #define DEVICE_ID "node01", #define NTP_HOST "192.168.1.10"
+   ```
+3. `pio run` rồi `pio run -t upload`, xem `pio device monitor`.
 
-**N4 (M3)**
-- Nhận `cmd`, `scenario`, `config` đầy đủ; gửi `ack` (ok hoặc từ chối kèm `reason`).
-- Hàng đợi FreeRTOS cho `eventPost`/`ackPost` (an toàn đa task).
-- Xong khi: gửi lệnh từ `mosquitto_pub` thì nhận đúng ack.
+## Test trên PC (không cần board)
+```
+g++ -std=c++17 -Wall -Isrc/p2_net -I.pio/libdeps/esp32dev/ArduinoJson/src test/p2_net/test_p2.cpp -o t && ./t
+```
+(`.pio/libdeps/...` có sau lần `pio run` đầu; hoặc clone ArduinoJson 7 và trỏ `-I` vào `src` của nó.)
 
-**N5 (M4):** chạy #4 #8 #10 cùng C, điền `docs/nghiem-thu/P2.md`.
+Công cụ MQTT (ESP32 giả, chạy ca thử lệnh, kiểm #8): `tools/p2_net/README.md`.
 
-## Hàm P2 PHẢI cung cấp
-`sampleCommit()`, `eventPost(type, reason, scope)`, `ackPost(id, ok, reason)`, `netTask(void*)`
+## Quyết định P2 đã áp dụng (ghi vào `docs/quyet-dinh.md`)
+- **ACK không chờ NTP** (hợp đồng 7.5: `ack` không có `ts`; quyết định #9 chỉ chặn telemetry/event). ACK có hàng đợi riêng, gửi ngay khi MQTT nối. Thay cho cách tạm "ACK chờ có giờ" ở `P2-dat.md` §13. **Cần trưởng nhóm B xác nhận.**
+- `mode` trong telemetry lấy từ lệnh `{"mode":...}` gần nhất (khác D5).
+- `wifi_ok`, `rssi`, `time_ok` giữ trong `net.cpp` (không thêm vào `Shared`). P2 chỉ ghi `gShared.mqtt_ok`.
+- Stop có `run_id` khác lượt đang chạy: P2 vẫn chuyển cho P9 (P9 dừng, ACK ok) theo v6.1. P2 không so `run_id`.
+- `config`: chỉ nhận khi `L1<L2<L3≤H_max`, `R_watch<R_high<R_full`, `0<pump_off<L3`, `0≤pwm_min≤pwm_max≤100`, `1≤cmd_ttl_s≤300`. Trường sai kiểu bị lờ đi.
 
-## Hàm P2 được gọi
-`cfgSet()`, `calibrateApply()` (P1); `pumpOnCommand()` (P7); `scenarioStart()`, `scenarioStop()` (P9)
-
-## Câu hỏi mở của P2 (ghi vào docs/cau-hoi-mo.md, hỏi nhóm C)
-Q1 (calibrate áp cảm biến nào), Q2 (định dạng status), Q8 (tên topic/trường của event, ack, scenario, config).
+## Ghi chú cho người khác
+- **P9:** gọi `eventPost("RUN_STOP", ...)` **trước** khi xoá `gShared.run_id` (event chép `run_id` lúc gọi).
+- **P7, P9:** không gọi `eventPost`/`eventPostState` khi đang giữ `Lock` hoặc trong `portENTER_CRITICAL` (hàm lấy `Lock`). `ackPost` không lấy `Lock`.
+- **Nhóm C:** sẽ có bản telemetry trùng sau khi mất liên kết (gửi lại 40 s gần nhất); bỏ trùng theo `(device_id, boot, seq)`.
 
 ## Cấm / dễ sai
-- KHÔNG khởi động lại board khi mất mạng (mất RAM đệm, trượt #8).
-- Không `delay(1000)` trong loop (rớt keepalive).
-- Không publish trong lúc giữ Lock.
-- Mọi tên topic/trường đối chiếu hợp đồng mục 7, chỗ đoán ghi "ĐỐI CHIẾU HỢP ĐỒNG".
+- Không khởi động lại board vì mất mạng. Không `delay()` dài trong `netTask`.
+- Wi-Fi không ra Internet thì không có NTP, firmware **không gửi telemetry**: đặt `NTP_HOST` về máy trong LAN.
